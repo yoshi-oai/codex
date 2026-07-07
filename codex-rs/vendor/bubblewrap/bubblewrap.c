@@ -2936,8 +2936,6 @@ main (int    argc,
   /* The initial code is run with high permissions
      (i.e. CAP_SYS_ADMIN), so take lots of care. */
 
-  read_overflowids ();
-
   argv0 = argv[0];
 
   if (isatty (1))
@@ -3051,6 +3049,23 @@ main (int    argc,
 
   if (!opt_unshare_user && opt_userns_fd == -1 && opt_sandbox_gid != real_gid)
     die ("Specifying --gid requires --unshare-user or --userns");
+
+  /*
+   * overflowuid and overflowgid are only used when setuid bubblewrap needs
+   * to add a root mapping for a devpts mount. In particular, unprivileged
+   * bubblewrap never uses them: it maps the caller's uid/gid directly.
+   *
+   * Do not read these sysctls for unrelated invocations. Some nested
+   * container runtimes expose /proc/sys through a FUSE mount that can become
+   * unavailable while ordinary user-namespace and mount operations still
+   * work. An unconditional read made every unprivileged bubblewrap command
+   * fail before it could parse or apply its mounts.
+   */
+  if (is_privileged && opt_unshare_user && opt_userns_block_fd == -1 &&
+      opt_needs_devpts &&
+      ((real_uid != 0 && opt_sandbox_uid != 0) ||
+       (real_gid != 0 && opt_sandbox_gid != 0)))
+    read_overflowids ();
 
   if (!opt_unshare_uts && opt_sandbox_hostname != NULL)
     die ("Specifying --hostname requires --unshare-uts");
